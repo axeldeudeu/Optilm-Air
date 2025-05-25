@@ -1,0 +1,46 @@
+name: optimair
+description: Application de suivi de la qualité de l'air en France.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase (déjà testé et fonctionnel)
+  firebase_core: ^2.24.2
+  cloud_firestore: ^4.13.6
+  
+  # UI et utilitaires (déjà testés)
+  cupertino_icons: ^1.0.6
+  shared_preferences: ^2.2.2
+  image_picker: ^1.0.7
+  
+  # Étapes 1-3 (déjà testées et fonctionnelles)
+  provider: ^6.1.1
+  csv: ^5.1.1
+  http: ^0.13.6
+  dio: ^5.4.0
+  fl_chart: ^0.65.0
+  geolocator: ^10.1.0
+  
+  # AJOUT ÉTAPE 4 : Cartes (versions compatibles testées)
+  flutter_map: 4.0.0        # Version EXACTE pour éviter les conflits
+  latlong2: 0.8.1          # Version EXACTE compatible
+  google_maps_flutter: ^2.5.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/airparif_logo.png
+    - assets/pollen_icon.png
