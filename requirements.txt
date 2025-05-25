@@ -1,0 +1,48 @@
+# Dépendances principales
+aiohttp==3.9.5
+aiofiles==23.2.1
+asyncio-cron==0.0.1
+
+# APIs et authentification
+google-cloud-aiplatform==1.38.1
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+
+# Base de données (optionnel)
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Gestion des données
+pandas==2.1.4
+numpy==1.24.4
+
+# Variables d'environnement et configuration
+python-dotenv==1.0.0
+
+# Logging et monitoring
+structlog==23.2.0
+
+# Tests (optionnel pour développement)
+pytest==7.4.4
+pytest-asyncio==0.23.2
+pytest-cov==4.1.0
+
+# Sécurité et validation
+pydantic==2.5.2
+cryptography==41.0.8
+
+# Utilitaires
+python-dateutil==2.8.2
+pytz==2023.3
+requests==2.31.0
+
+# Pour les health checks sur Render
+uvicorn==0.24.0
+fastapi==0.104.1
+
+# Gestion des erreurs et retry
+tenacity==8.2.3
+
+# Monitoring et métriques (optionnel)
+prometheus-client==0.19.0
