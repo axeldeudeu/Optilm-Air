@@ -1,11 +1,11 @@
 """
-Collecteur de données de qualité de l'air via GCP Air Quality API
+Collecteur de données de qualité de l'air via GCP Air Quality API - Version simplifiée
 """
 
 import aiohttp
 import asyncio
-from typing import Dict, Any, Optional
 import logging
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 
@@ -21,18 +21,10 @@ class AirQualityCollector:
     async def get_air_quality_data(self, latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
         """
         Récupère les données de qualité de l'air pour une localisation donnée
-        
-        Args:
-            latitude: Latitude de la localisation
-            longitude: Longitude de la localisation
-            
-        Returns:
-            Dictionnaire contenant les données de qualité de l'air ou None en cas d'erreur
         """
         try:
             url = f"{self.base_url}/currentConditions:lookup"
             
-            # Payload pour l'API GCP Air Quality
             payload = {
                 "location": {
                     "latitude": latitude,
@@ -42,8 +34,7 @@ class AirQualityCollector:
                     "HEALTH_RECOMMENDATIONS",
                     "DOMINANT_POLLUTANT_CONCENTRATION",
                     "POLLUTANT_CONCENTRATION",
-                    "LOCAL_AQI",
-                    "POLLUTANT_ADDITIONAL_INFO"
+                    "LOCAL_AQI"
                 ],
                 "languageCode": "fr"
             }
@@ -54,7 +45,8 @@ class AirQualityCollector:
                 "X-Goog-User-Project": self.project_id
             }
             
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=payload, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -72,15 +64,7 @@ class AirQualityCollector:
             return None
     
     def _process_air_quality_response(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Traite et structure la réponse de l'API Air Quality
-        
-        Args:
-            raw_data: Données brutes de l'API
-            
-        Returns:
-            Données structurées
-        """
+        """Traite et structure la réponse de l'API Air Quality"""
         try:
             processed_data = {
                 "collected_at": datetime.now(timezone.utc).isoformat(),
@@ -130,55 +114,3 @@ class AirQualityCollector:
         except Exception as e:
             self.logger.error(f"Erreur lors du traitement des données Air Quality: {str(e)}")
             return {"error": str(e), "raw_data": raw_data}
-    
-    async def get_historical_data(self, latitude: float, longitude: float, 
-                                hours_back: int = 24) -> Optional[Dict[str, Any]]:
-        """
-        Récupère les données historiques si disponibles
-        
-        Args:
-            latitude: Latitude
-            longitude: Longitude  
-            hours_back: Nombre d'heures dans le passé
-            
-        Returns:
-            Données historiques ou None
-        """
-        try:
-            url = f"{self.base_url}/history:lookup"
-            
-            payload = {
-                "location": {
-                    "latitude": latitude,
-                    "longitude": longitude
-                },
-                "hours": hours_back,
-                "pageSize": 100
-            }
-            
-            headers = {
-                "Content-Type": "application/json",
-                "X-Goog-Api-Key": self.api_key,
-                "X-Goog-User-Project": self.project_id
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return self._process_historical_response(data)
-                    else:
-                        self.logger.warning(f"Données historiques non disponibles: {response.status}")
-                        return None
-                        
-        except Exception as e:
-            self.logger.error(f"Erreur données historiques: {str(e)}")
-            return None
-    
-    def _process_historical_response(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Traite les données historiques"""
-        return {
-            "collected_at": datetime.now(timezone.utc).isoformat(),
-            "data_source": "gcp_air_quality_api_historical",
-            "historical_data": raw_data
-        }
