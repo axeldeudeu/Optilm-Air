@@ -67,7 +67,6 @@ class DataStorage:
         return results
         
     async def _save_local_json(self, data: Dict[str, Any]) -> bool:
-    async def _save_local_json(self, data: Dict[str, Any]) -> bool:
         """Sauvegarde en JSON local"""
         try:
             # Créer le dossier de données
@@ -94,7 +93,7 @@ class DataStorage:
         except Exception as e:
             self.logger.error(f"Erreur sauvegarde locale: {str(e)}")
             return False
-    
+
     def get_latest_data(self) -> Dict[str, Any]:
         """Récupère les dernières données sauvegardées"""
         try:
