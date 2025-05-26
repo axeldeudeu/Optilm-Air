@@ -1,35 +1,24 @@
 """
-Health check endpoint pour Render
-Vérifie que le service est opérationnel
+Health check endpoint pour Render - Version simplifiée
 """
 
 import os
 import json
-import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 import uvicorn
-import logging
-
-from utils.config import Config
-from utils.logger import setup_logger
 
 app = FastAPI(title="Weather Data Collector Health Check")
-logger = setup_logger(__name__)
-
 
 @app.get("/")
 async def root():
     """Point d'entrée principal"""
     return {"status": "ok", "service": "weather-data-collector"}
 
-
 @app.get("/health")
 async def health_check():
-    """
-    Health check complet du service
-    """
+    """Health check complet du service"""
     try:
         health_status = {
             "status": "healthy",
@@ -39,12 +28,21 @@ async def health_check():
         
         # Vérification de la configuration
         try:
-            config = Config()
-            health_status["checks"]["config"] = {
-                "status": "ok",
-                "gcp_configured": bool(config.gcp_api_key),
-                "openweather_configured": bool(config.openweather_api_key)
-            }
+            required_vars = ["GCP_AIR_QUALITY_API_KEY", "GCP_PROJECT_ID", "OPENWEATHER_API_KEY"]
+            missing_vars = [var for var in required_vars if not os.getenv(var)]
+            
+            if missing_vars:
+                health_status["checks"]["config"] = {
+                    "status": "error",
+                    "missing_vars": missing_vars
+                }
+                health_status["status"] = "unhealthy"
+            else:
+                health_status["checks"]["config"] = {
+                    "status": "ok",
+                    "gcp_configured": bool(os.getenv("GCP_AIR_QUALITY_API_KEY")),
+                    "openweather_configured": bool(os.getenv("OPENWEATHER_API_KEY"))
+                }
         except Exception as e:
             health_status["checks"]["config"] = {
                 "status": "error",
@@ -60,15 +58,13 @@ async def health_check():
             health_status["checks"]["filesystem"] = {
                 "status": "ok",
                 "data_dir_exists": data_dir.exists(),
-                "logs_dir_exists": logs_dir.exists(),
-                "data_dir_writable": os.access(data_dir.parent, os.W_OK)
+                "logs_dir_exists": logs_dir.exists()
             }
         except Exception as e:
             health_status["checks"]["filesystem"] = {
                 "status": "error",
                 "error": str(e)
             }
-            health_status["status"] = "unhealthy"
         
         # Vérification des dernières données
         try:
@@ -100,13 +96,11 @@ async def health_check():
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur health check: {str(e)}")
         raise HTTPException(status_code=500, detail={
             "status": "error",
             "error": str(e),
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
-
 
 @app.get("/status")
 async def simple_status():
@@ -117,12 +111,9 @@ async def simple_status():
         "uptime": "active"
     }
 
-
 @app.get("/latest")
 async def get_latest_data():
-    """
-    Retourne les dernières données collectées (si disponibles)
-    """
+    """Retourne les dernières données collectées (si disponibles)"""
     try:
         latest_file = Path("data") / "latest_data.json"
         
@@ -148,15 +139,11 @@ async def get_latest_data():
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur récupération données: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/metrics")
 async def get_metrics():
-    """
-    Métriques basiques du service
-    """
+    """Métriques basiques du service"""
     try:
         data_dir = Path("data")
         logs_dir = Path("logs")
@@ -166,30 +153,18 @@ async def get_metrics():
                 "data_files": len(list(data_dir.glob("*.json"))) if data_dir.exists() else 0,
                 "log_files": len(list(logs_dir.glob("*.log"))) if logs_dir.exists() else 0
             },
-            "disk_usage": {},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-        
-        # Utilisation disque si possible
-        try:
-            if data_dir.exists():
-                total_size = sum(f.stat().st_size for f in data_dir.glob("*") if f.is_file())
-                metrics["disk_usage"]["data_dir_mb"] = round(total_size / (1024 * 1024), 2)
-        except:
-            pass
         
         return metrics
         
     except Exception as e:
-        logger.error(f"Erreur métriques: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 def run_health_server():
     """Lance le serveur de health check"""
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
-
 
 if __name__ == "__main__":
     run_health_server()
