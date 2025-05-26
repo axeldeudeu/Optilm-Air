@@ -53,12 +53,10 @@ jobs:
         echo "📍 Localisation: Paris (48.8566, 2.3522)"
         echo "⏰ Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
         
-        # Exécuter le script principal
         python main.py
         
         echo "✅ Collecte terminée avec succès"
         
-        # Afficher un résumé si le fichier existe
         if [ -f "data/latest_data.json" ]; then
           echo "📊 Résumé des données collectées:"
           python -c "
@@ -74,7 +72,7 @@ except Exception as e:
           "
         fi
     
-    - name: Upload Data Files (Optional)
+    - name: Upload Data Files
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -83,7 +81,7 @@ except Exception as e:
         retention-days: 7
         if-no-files-found: warn
     
-    - name: Upload Logs (Optional)
+    - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -91,10 +89,3 @@ except Exception as e:
         path: logs/
         retention-days: 3
         if-no-files-found: ignore
-    
-    - name: Cleanup Old Artifacts
-      if: always()
-      run: |
-        echo "🧹 Nettoyage terminé"
-        ls -la data/ || echo "Aucun fichier de données"
-        ls -la logs/ || echo "Aucun fichier de logs"
