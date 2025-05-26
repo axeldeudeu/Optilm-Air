@@ -24,7 +24,7 @@ pydantic==2.5.2
 # Gestion des erreurs et retry
 tenacity==8.2.3
 
-geopy==2.4.1                 # Pour le géocodage
-python-jose==3.3.0           # Pour JWT si authentification
-email-validator==2.1.0       # Pour valider les emails
+geopy==2.4.1
+python-jose==3.3.0
+email-validator==2.1.0
 python-multipart==0.0.6 
