@@ -17,9 +17,17 @@ jobs:
       uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+    
+    - name: Cache Python Dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
     
     - name: Install Dependencies
       run: |
@@ -29,6 +37,7 @@ jobs:
     - name: Create Required Directories
       run: |
         mkdir -p data logs
+        echo "📁 Dossiers créés : data/ et logs/"
     
     - name: Run Weather Data Collection
       env:
@@ -41,13 +50,51 @@ jobs:
         LOG_LEVEL: INFO
       run: |
         echo "🚀 Démarrage de la collecte de données météo"
+        echo "📍 Localisation: Paris (48.8566, 2.3522)"
+        echo "⏰ Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        
+        # Exécuter le script principal
         python main.py
-        echo "✅ Collecte terminée"
+        
+        echo "✅ Collecte terminée avec succès"
+        
+        # Afficher un résumé si le fichier existe
+        if [ -f "data/latest_data.json" ]; then
+          echo "📊 Résumé des données collectées:"
+          python -c "
+import json
+try:
+    with open('data/latest_data.json', 'r') as f:
+        data = json.load(f)
+    print(f'🌬️  Air Quality: {\"✅\" if data.get(\"collection_status\", {}).get(\"air_quality_success\") else \"❌\"}')
+    print(f'🌤️  Weather: {\"✅\" if data.get(\"collection_status\", {}).get(\"weather_success\") else \"❌\"}')
+    print(f'📅 Timestamp: {data.get(\"timestamp\", \"N/A\")}')
+except Exception as e:
+    print(f'❌ Erreur lecture résumé: {e}')
+          "
+        fi
+    
+    - name: Upload Data Files (Optional)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: weather-data-${{ github.run_number }}
+        path: data/
+        retention-days: 7
+        if-no-files-found: warn
     
     - name: Upload Logs (Optional)
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: weather-logs
+        name: weather-logs-${{ github.run_number }}
         path: logs/
-        retention-days: 7
+        retention-days: 3
+        if-no-files-found: ignore
+    
+    - name: Cleanup Old Artifacts
+      if: always()
+      run: |
+        echo "🧹 Nettoyage terminé"
+        ls -la data/ || echo "Aucun fichier de données"
+        ls -la logs/ || echo "Aucun fichier de logs"
