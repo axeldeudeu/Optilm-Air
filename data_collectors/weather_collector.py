@@ -1,11 +1,11 @@
 """
-Collecteur de données météorologiques via OpenWeather API
+Collecteur de données météorologiques via OpenWeather API - Version simplifiée
 """
 
 import aiohttp
 import asyncio
-from typing import Dict, Any, Optional
 import logging
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 
@@ -15,28 +15,19 @@ class WeatherCollector:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://api.openweathermap.org/data/2.5"
-        self.onecall_url = "https://api.openweathermap.org/data/3.0/onecall"
         self.logger = logging.getLogger(__name__)
     
     async def get_weather_data(self, latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
         """
         Récupère les données météorologiques complètes
-        
-        Args:
-            latitude: Latitude de la localisation
-            longitude: Longitude de la localisation
-            
-        Returns:
-            Dictionnaire contenant les données météo ou None en cas d'erreur
         """
         try:
             # Collecte de toutes les données météo en parallèle
             current_task = self._get_current_weather(latitude, longitude)
             forecast_task = self._get_forecast_weather(latitude, longitude)
-            onecall_task = self._get_onecall_weather(latitude, longitude)
             
-            current_data, forecast_data, onecall_data = await asyncio.gather(
-                current_task, forecast_task, onecall_task,
+            current_data, forecast_data = await asyncio.gather(
+                current_task, forecast_task,
                 return_exceptions=True
             )
             
@@ -59,12 +50,6 @@ class WeatherCollector:
             else:
                 self.logger.warning(f"Erreur prévisions: {forecast_data}")
             
-            # OneCall (données complètes)
-            if not isinstance(onecall_data, Exception) and onecall_data:
-                weather_data["detailed"] = onecall_data
-            else:
-                self.logger.warning(f"Erreur OneCall: {onecall_data}")
-            
             return weather_data
             
         except Exception as e:
@@ -83,7 +68,8 @@ class WeatherCollector:
                 "lang": "fr"
             }
             
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -108,7 +94,8 @@ class WeatherCollector:
                 "lang": "fr"
             }
             
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -121,32 +108,6 @@ class WeatherCollector:
             self.logger.error(f"Erreur forecast: {str(e)}")
             return None
     
-    async def _get_onecall_weather(self, lat: float, lon: float) -> Optional[Dict[str, Any]]:
-        """Récupère les données complètes OneCall"""
-        try:
-            url = self.onecall_url
-            params = {
-                "lat": lat,
-                "lon": lon,
-                "appid": self.api_key,
-                "units": "metric",
-                "lang": "fr",
-                "exclude": "minutely"  # Exclut les données par minute pour économiser
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return self._process_onecall_weather(data)
-                    else:
-                        self.logger.warning(f"OneCall non disponible: {response.status}")
-                        return None
-                        
-        except Exception as e:
-            self.logger.warning(f"OneCall non accessible: {str(e)}")
-            return None
-    
     def _process_current_weather(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Traite les données météo actuelles"""
         try:
@@ -156,7 +117,6 @@ class WeatherCollector:
                 "humidity": data["main"]["humidity"],
                 "pressure": data["main"]["pressure"],
                 "visibility": data.get("visibility"),
-                "uv_index": data.get("uvi"),
                 "weather": {
                     "main": data["weather"][0]["main"],
                     "description": data["weather"][0]["description"],
@@ -213,43 +173,4 @@ class WeatherCollector:
             }
         except Exception as e:
             self.logger.error(f"Erreur traitement forecast: {str(e)}")
-            return {"error": str(e)}
-    
-    def _process_onecall_weather(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Traite les données OneCall complètes"""
-        try:
-            processed = {
-                "timezone": data["timezone"],
-                "timezone_offset": data["timezone_offset"]
-            }
-            
-            # Données actuelles
-            if "current" in data:
-                current = data["current"]
-                processed["current_detailed"] = {
-                    "temperature": current["temp"],
-                    "feels_like": current["feels_like"],
-                    "pressure": current["pressure"],
-                    "humidity": current["humidity"],
-                    "dew_point": current["dew_point"],
-                    "uvi": current["uvi"],
-                    "clouds": current["clouds"],
-                    "visibility": current.get("visibility"),
-                    "wind_speed": current["wind_speed"],
-                    "wind_deg": current.get("wind_deg"),
-                    "weather": current["weather"][0] if current["weather"] else None
-                }
-            
-            # Prévisions horaires (24h)
-            if "hourly" in data:
-                processed["hourly"] = data["hourly"][:24]
-            
-            # Prévisions quotidiennes (7 jours)
-            if "daily" in data:
-                processed["daily"] = data["daily"][:7]
-            
-            return processed
-            
-        except Exception as e:
-            self.logger.error(f"Erreur traitement OneCall: {str(e)}")
             return {"error": str(e)}
