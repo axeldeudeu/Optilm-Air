@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
 Script principal pour collecter les données de qualité de l'air et météorologiques
-Exécuté toutes les heures via cron-job sur Render
+Version simplifiée pour éviter les problèmes de dépendances
 """
 
 import os
 import sys
-import json
-import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
 import asyncio
+from datetime import datetime, timezone
+from typing import Dict, Any
 
 from data_collectors.air_quality_collector import AirQualityCollector
 from data_collectors.weather_collector import WeatherCollector
@@ -23,25 +21,30 @@ class DataCollectionOrchestrator:
     """Orchestrateur principal pour la collecte de données"""
     
     def __init__(self):
-        self.config = Config()
-        self.logger = setup_logger(__name__)
-        self.storage = DataStorage()
-        self.air_quality_collector = AirQualityCollector(
-            api_key=self.config.gcp_api_key,
-            project_id=self.config.gcp_project_id
-        )
-        self.weather_collector = WeatherCollector(
-            api_key=self.config.openweather_api_key
-        )
+        try:
+            self.config = Config()
+            self.logger = setup_logger(__name__)
+            self.storage = DataStorage()
+            self.air_quality_collector = AirQualityCollector(
+                api_key=self.config.gcp_api_key,
+                project_id=self.config.gcp_project_id
+            )
+            self.weather_collector = WeatherCollector(
+                api_key=self.config.openweather_api_key
+            )
+            self.logger.info("Orchestrateur initialisé avec succès")
+        except Exception as e:
+            print(f"Erreur initialisation: {e}")
+            raise
     
     async def collect_all_data(self) -> Dict[str, Any]:
         """Collecte toutes les données de manière asynchrone"""
         try:
             self.logger.info("Début de la collecte de données")
             
-            # Coordonnées par défaut (Paris) - à adapter selon vos besoins
-            lat = float(os.getenv('DEFAULT_LATITUDE', '48.8566'))
-            lon = float(os.getenv('DEFAULT_LONGITUDE', '2.3522'))
+            # Coordonnées par défaut
+            lat = self.config.default_latitude
+            lon = self.config.default_longitude
             
             # Collecte parallèle des données
             air_quality_task = self.air_quality_collector.get_air_quality_data(lat, lon)
@@ -87,28 +90,39 @@ class DataCollectionOrchestrator:
             data = await self.collect_all_data()
             
             # Sauvegarde
-            await self.storage.save_data(data)
+            result = await self.storage.save_data(data)
             
             # Log de succès
-            self.logger.info(f"Collecte réussie - AQ: {data['collection_status']['air_quality_success']}, Weather: {data['collection_status']['weather_success']}")
+            success_msg = f"Collecte réussie - AQ: {data['collection_status']['air_quality_success']}, Weather: {data['collection_status']['weather_success']}"
+            self.logger.info(success_msg)
+            print(success_msg)
             
             return data
             
         except Exception as e:
-            self.logger.error(f"Erreur critique: {str(e)}")
+            error_msg = f"Erreur critique: {str(e)}"
+            self.logger.error(error_msg)
+            print(error_msg)
             sys.exit(1)
 
 
 async def main():
     """Point d'entrée du script"""
-    orchestrator = DataCollectionOrchestrator()
-    result = await orchestrator.run()
-    
-    # Affichage du résumé
-    print(f"✅ Collecte terminée à {result['timestamp']}")
-    print(f"📍 Location: {result['location']['latitude']}, {result['location']['longitude']}")
-    print(f"🌬️  Air Quality: {'✅' if result['collection_status']['air_quality_success'] else '❌'}")
-    print(f"🌤️  Weather: {'✅' if result['collection_status']['weather_success'] else '❌'}")
+    try:
+        print("🚀 Démarrage du collecteur de données météo")
+        
+        orchestrator = DataCollectionOrchestrator()
+        result = await orchestrator.run()
+        
+        # Affichage du résumé
+        print(f"✅ Collecte terminée à {result['timestamp']}")
+        print(f"📍 Location: {result['location']['latitude']}, {result['location']['longitude']}")
+        print(f"🌬️  Air Quality: {'✅' if result['collection_status']['air_quality_success'] else '❌'}")
+        print(f"🌤️  Weather: {'✅' if result['collection_status']['weather_success'] else '❌'}")
+        
+    except Exception as e:
+        print(f"❌ Erreur fatale: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
