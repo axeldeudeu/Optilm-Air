@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "422830734613",
+    "project_id": "optim-air-75ca0",
+    "storage_bucket": "optim-air-75ca0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:422830734613:android:bc3f7ea90a54ef8106bd1c",
+        "android_client_info": {
+          "package_name": "com.example.optimair"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAs3x3C3qk0Z5zUm2oDjpgGLZGUNEPQSJc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:422830734613:android:b92aa3d98289227806bd1c",
+        "android_client_info": {
+          "package_name": "com.example.optimair_vf"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAs3x3C3qk0Z5zUm2oDjpgGLZGUNEPQSJc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
