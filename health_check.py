@@ -1,118 +1,195 @@
 """
-Système de stockage des données collectées
-Inclut Firebase/Firestore pour l'app Flutter
+Health check endpoint pour Render - Version simplifiée
 """
 
 import os
 import json
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
-from firebase.firebase_client import FirebaseClient
+from fastapi import FastAPI, HTTPException
+import uvicorn
 
+from storage.data_storage import DataStorage
 
-class DataStorage:
-    """Gestionnaire de stockage des données avec Firebase"""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.firebase_client = None
-        self._initialize_firebase()
-    
-    def _initialize_firebase(self):
-        """Initialise le client Firebase si configuré"""
-        try:
-            if os.getenv("FIREBASE_CREDENTIALS_JSON") or os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"):
-                self.firebase_client = FirebaseClient()
-                self.logger.info("Firebase activé pour le stockage")
-            else:
-                self.logger.info("Firebase non configuré - stockage local uniquement")
-        except Exception as e:
-            self.logger.error(f"Erreur initialisation Firebase: {str(e)}")
-            self.firebase_client = None
-        
-    async def save_data(self, data: Dict[str, Any]) -> Dict[str, bool]:
-        """
-        Sauvegarde les données en local et Firebase
-        
-        Args:
-            data: Données à sauvegarder
-            
-        Returns:
-            Dict avec le statut de chaque méthode de sauvegarde
-        """
-        results = {}
-        
-        # 1. Sauvegarde locale (toujours)
-        local_result = await self._save_local_json(data)
-        results['local_json'] = local_result
-        
-        # 2. Sauvegarde Firebase (si configuré)
-        if self.firebase_client:
-            try:
-                firebase_result = await self.firebase_client.save_weather_data(data)
-                results['firebase'] = firebase_result
-                if firebase_result:
-                    self.logger.info("✅ Données envoyées vers Firebase/Firestore")
-                else:
-                    self.logger.error("❌ Échec envoi vers Firebase")
-            except Exception as e:
-                self.logger.error(f"Erreur Firebase: {str(e)}")
-                results['firebase'] = False
-        else:
-            results['firebase'] = False
-            self.logger.info("Firebase non configuré - stockage local uniquement")
-        
-        return results
-        
-    async def _save_local_json(self, data: Dict[str, Any]) -> bool:
-    async def _save_local_json(self, data: Dict[str, Any]) -> bool:
-        """Sauvegarde en JSON local"""
-        try:
-            # Créer le dossier de données
-            data_dir = Path("data")
-            data_dir.mkdir(exist_ok=True)
-            
-            # Nom de fichier avec timestamp
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            filename = f"weather_data_{timestamp}.json"
-            filepath = data_dir / filename
-            
-            # Sauvegarde synchrone (plus simple)
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(json.dumps(data, indent=2, ensure_ascii=False))
-            
-            # Maintenir aussi un fichier "latest"
-            latest_path = data_dir / "latest_data.json"
-            with open(latest_path, 'w', encoding='utf-8') as f:
-                f.write(json.dumps(data, indent=2, ensure_ascii=False))
-            
-            self.logger.info(f"Données sauvées localement: {filepath}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Erreur sauvegarde locale: {str(e)}")
-            return False
-    
-    def get_latest_data(self) -> Dict[str, Any]:
-        """Récupère les dernières données sauvegardées"""
-        try:
-            latest_path = Path("data") / "latest_data.json"
-            if latest_path.exists():
-                with open(latest_path, 'r', encoding='utf-8') as f:
-                    return json.loads(f.read())
-            return None
-        except Exception as e:
-            self.logger.error(f"Erreur lecture données: {str(e)}")
-            return None
-    
-    def get_firebase_status(self) -> Dict[str, Any]:
-        """Retourne le statut de Firebase"""
-        if self.firebase_client:
-            return self.firebase_client.get_connection_status()
-        return {
-            'firebase_initialized': False,
-            'firestore_client_ready': False,
-            'error': 'Firebase non configuré'
+app = FastAPI(title="Weather Data Collector Health Check")
+storage = DataStorage()  # Initialiser le storage pour les checks Firebase
+
+@app.get("/")
+async def root():
+    """Point d'entrée principal"""
+    return {"status": "ok", "service": "weather-data-collector"}
+
+@app.get("/health")
+async def health_check():
+    """Health check complet du service"""
+    try:
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "checks": {}
         }
+        
+        # Vérification de la configuration
+        try:
+            required_vars = ["GCP_AIR_QUALITY_API_KEY", "GCP_PROJECT_ID", "OPENWEATHER_API_KEY"]
+            missing_vars = [var for var in required_vars if not os.getenv(var)]
+            
+            if missing_vars:
+                health_status["checks"]["config"] = {
+                    "status": "error",
+                    "missing_vars": missing_vars
+                }
+                health_status["status"] = "unhealthy"
+            else:
+                health_status["checks"]["config"] = {
+                    "status": "ok",
+                    "gcp_configured": bool(os.getenv("GCP_AIR_QUALITY_API_KEY")),
+                    "openweather_configured": bool(os.getenv("OPENWEATHER_API_KEY"))
+                }
+        except Exception as e:
+            health_status["checks"]["config"] = {
+                "status": "error",
+                "error": str(e)
+            }
+            health_status["status"] = "unhealthy"
+        
+        # Vérification du système de fichiers
+        try:
+            data_dir = Path("data")
+            logs_dir = Path("logs")
+            
+            health_status["checks"]["filesystem"] = {
+                "status": "ok",
+                "data_dir_exists": data_dir.exists(),
+                "logs_dir_exists": logs_dir.exists()
+            }
+        except Exception as e:
+            health_status["checks"]["filesystem"] = {
+                "status": "error",
+                "error": str(e)
+            }
+        
+        # Vérification de Firebase
+        try:
+            firebase_status = storage.get_firebase_status()
+            health_status["checks"]["firebase"] = firebase_status
+        except Exception as e:
+            health_status["checks"]["firebase"] = {
+                "status": "error",
+                "error": str(e)
+            }
+        
+        # Vérification des dernières données
+        try:
+            latest_file = Path("data") / "latest_data.json"
+            if latest_file.exists():
+                stat = latest_file.stat()
+                health_status["checks"]["last_collection"] = {
+                    "status": "ok",
+                    "last_modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                    "file_size": stat.st_size
+                }
+            else:
+                health_status["checks"]["last_collection"] = {
+                    "status": "warning",
+                    "message": "Aucune donnée collectée encore"
+                }
+        except Exception as e:
+            health_status["checks"]["last_collection"] = {
+                "status": "error",
+                "error": str(e)
+            }
+        
+        # Retourner le statut approprié
+        if health_status["status"] == "unhealthy":
+            raise HTTPException(status_code=503, detail=health_status)
+        
+        return health_status
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+
+@app.get("/status")
+async def simple_status():
+    """Status simple pour les checks rapides"""
+    return {
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime": "active"
+    }
+
+@app.get("/latest")
+async def get_latest_data():
+    """Retourne les dernières données collectées (si disponibles)"""
+    try:
+        latest_file = Path("data") / "latest_data.json"
+        
+        if not latest_file.exists():
+            raise HTTPException(status_code=404, detail="Aucune donnée disponible")
+        
+        with open(latest_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Retourner seulement un résumé pour la sécurité
+        summary = {
+            "timestamp": data.get("timestamp"),
+            "location": data.get("location"),
+            "collection_status": data.get("collection_status"),
+            "data_available": {
+                "air_quality": data.get("air_quality") is not None,
+                "weather": data.get("weather") is not None
+            }
+        }
+        
+        return summary
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/metrics")
+async def get_metrics():
+    """Métriques basiques du service"""
+    try:
+        data_dir = Path("data")
+        logs_dir = Path("logs")
+        
+        metrics = {
+            "files": {
+                "data_files": len(list(data_dir.glob("*.json"))) if data_dir.exists() else 0,
+                "log_files": len(list(logs_dir.glob("*.log"))) if logs_dir.exists() else 0
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        return metrics
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/firebase")
+async def firebase_status():
+    """Status détaillé de Firebase"""
+    try:
+        firebase_status = storage.get_firebase_status()
+        return firebase_status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": str(e),
+            "firebase_available": False
+        })
+
+def run_health_server():
+    """Lance le serveur de health check"""
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+
+if __name__ == "__main__":
+    run_health_server()
