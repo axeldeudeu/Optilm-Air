@@ -1,9 +1,37 @@
-name: Weather Data Collector
+name: Weather Data Collector with Geolocation
 
 on:
   schedule:
+    # Collecte toutes les heures
     - cron: '0 * * * *'
+  # Déclenchement manuel
   workflow_dispatch:
+    inputs:
+      latitude:
+        description: 'Latitude personnalisée (optionnelle)'
+        required: false
+        type: string
+        default: '48.8566'
+      longitude:
+        description: 'Longitude personnalisée (optionnelle)'
+        required: false
+        type: string
+        default: '2.3522'
+      log_level:
+        description: 'Niveau de log'
+        required: false
+        type: choice
+        options:
+          - INFO
+          - DEBUG
+          - WARNING
+        default: 'INFO'
+
+env:
+  # Variables globales
+  PYTHON_VERSION: '3.11'
+  DEFAULT_LATITUDE: 48.8566
+  DEFAULT_LONGITUDE: 2.3522
 
 jobs:
   collect-weather-data:
@@ -12,12 +40,12 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
-    
+      
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
-    
+        python-version: ${{ env.PYTHON_VERSION }}
+        
     - name: Cache Python Dependencies
       uses: actions/cache@v4
       with:
@@ -25,54 +53,186 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
-    
+          
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
+        echo "✅ Dépendances installées"
+        
     - name: Create Required Directories
       run: |
         mkdir -p data logs
-        echo "📁 Dossiers créés"
-    
+        echo "📁 Dossiers créés: data/, logs/"
+        
+    - name: Verify Configuration
+      env:
+        GCP_AIR_QUALITY_API_KEY: ${{ secrets.GCP_AIR_QUALITY_API_KEY }}
+        GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+        FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+      run: |
+        echo "🔧 Vérification de la configuration:"
+        echo "  - GCP Project ID: ${{ secrets.GCP_PROJECT_ID && '✅ Configuré' || '❌ Manquant' }}"
+        echo "  - GCP Air Quality API: ${{ secrets.GCP_AIR_QUALITY_API_KEY && '✅ Configuré' || '❌ Manquant' }}"
+        echo "  - OpenWeather API: ${{ secrets.OPENWEATHER_API_KEY && '✅ Configuré' || '❌ Manquant' }}"
+        echo "  - Firebase Credentials: ${{ secrets.FIREBASE_CREDENTIALS_JSON && '✅ Configuré' || '❌ Manquant' }}"
+        
+    - name: Display Collection Parameters
+      run: |
+        # Utiliser les inputs si fournis, sinon les valeurs par défaut
+        LATITUDE="${{ github.event.inputs.latitude || env.DEFAULT_LATITUDE }}"
+        LONGITUDE="${{ github.event.inputs.longitude || env.DEFAULT_LONGITUDE }}"
+        LOG_LEVEL="${{ github.event.inputs.log_level || 'INFO' }}"
+        
+        echo "🚀 Paramètres de collecte:"
+        echo "  📍 Localisation: $LATITUDE, $LONGITUDE"
+        echo "  📊 Niveau de log: $LOG_LEVEL"
+        echo "  ⏰ Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "  🔄 Run ID: ${{ github.run_id }}"
+        echo "  🏃 Run Number: ${{ github.run_number }}"
+        
+        # Exporter pour les étapes suivantes
+        echo "COLLECTION_LATITUDE=$LATITUDE" >> $GITHUB_ENV
+        echo "COLLECTION_LONGITUDE=$LONGITUDE" >> $GITHUB_ENV
+        echo "COLLECTION_LOG_LEVEL=$LOG_LEVEL" >> $GITHUB_ENV
+        
     - name: Run Weather Data Collection
       env:
         GCP_AIR_QUALITY_API_KEY: ${{ secrets.GCP_AIR_QUALITY_API_KEY }}
         GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
-        DEFAULT_LATITUDE: 48.8566
-        DEFAULT_LONGITUDE: 2.3522
-        LOG_LEVEL: INFO
+        DEFAULT_LATITUDE: ${{ env.COLLECTION_LATITUDE }}
+        DEFAULT_LONGITUDE: ${{ env.COLLECTION_LONGITUDE }}
+        LOG_LEVEL: ${{ env.COLLECTION_LOG_LEVEL }}
       run: |
-        echo "🚀 Démarrage de la collecte de données météo"
-        echo "📍 Localisation: Paris (48.8566, 2.3522)"
-        echo "⏰ Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "🚀 Démarrage de la collecte de données météo avec géolocalisation"
         
-        python main.py
+        # Lancer la collecte en mode collect
+        python main.py collect
         
-        echo "✅ Collecte terminée"
-    
-    - name: Show Results
+        echo "✅ Collecte terminée avec succès"
+        
+    - name: Verify Collection Results
       if: always()
       run: |
-        echo "📊 Vérification des fichiers générés:"
-        ls -la data/ || echo "Pas de dossier data"
-        ls -la logs/ || echo "Pas de dossier logs"
+        echo "📊 Vérification des résultats de collecte:"
         
+        # Vérifier la structure des dossiers
+        echo "📁 Structure des fichiers:"
+        ls -la data/ 2>/dev/null || echo "  ❌ Dossier data/ vide ou absent"
+        ls -la logs/ 2>/dev/null || echo "  ❌ Dossier logs/ vide ou absent"
+        
+        # Vérifier le fichier de données principal
         if [ -f "data/latest_data.json" ]; then
-          echo "✅ Fichier de données trouvé"
-          head -n 10 data/latest_data.json
-        else
-          echo "❌ Pas de fichier de données"
-        fi
+          echo "✅ Fichier de données principal trouvé"
+          echo "📄 Aperçu des données (10 premières lignes):"
+          head -n 10 data/latest_data.json | sed 's/^/  /'
+          
+          # Analyser le contenu JSON
+          echo "🔍 Analyse du contenu:"
+          python -c "
+import json
+try:
+    with open('data/latest_data.json', 'r') as f:
+        data = json.load(f)
+    print(f'  ⏰ Timestamp: {data.get(\"timestamp\", \"N/A\")}')
+    print(f'  📍 Location: {data.get(\"location\", {})}')
     
+    status = data.get('collection_status', {})
+    print(f'  🌬️  Air Quality: {\"✅\" if status.get(\"air_quality_success\") else \"❌\"}')
+    print(f'  🌤️  Weather: {\"✅\" if status.get(\"weather_success\") else \"❌\"}')
+    
+    # Taille du fichier
+    import os
+    size = os.path.getsize('data/latest_data.json')
+    print(f'  📏 Taille: {size} bytes')
+    
+except Exception as e:
+    print(f'  ❌ Erreur analyse JSON: {e}')
+"
+        else
+          echo "❌ Fichier de données principal non trouvé"
+        fi
+        
+        # Vérifier les logs
+        if [ -d "logs" ] && [ "$(ls -A logs/)" ]; then
+          echo "📋 Fichiers de log trouvés:"
+          ls -la logs/ | sed 's/^/  /'
+          
+          # Afficher les dernières lignes du log le plus récent
+          LATEST_LOG=$(ls -t logs/*.log 2>/dev/null | head -n1)
+          if [ -n "$LATEST_LOG" ]; then
+            echo "📝 Dernières entrées de log ($LATEST_LOG):"
+            tail -n 5 "$LATEST_LOG" | sed 's/^/  /'
+          fi
+        else
+          echo "⚠️ Aucun fichier de log trouvé"
+        fi
+        
+    - name: Generate Collection Summary
+      if: always()
+      run: |
+        echo "📈 Résumé de la collecte:" > collection_summary.txt
+        echo "=============================" >> collection_summary.txt
+        echo "⏰ Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> collection_summary.txt
+        echo "🏃 Run: ${{ github.run_number }}" >> collection_summary.txt
+        echo "📍 Coordonnées: ${{ env.COLLECTION_LATITUDE }}, ${{ env.COLLECTION_LONGITUDE }}" >> collection_summary.txt
+        echo "📊 Log Level: ${{ env.COLLECTION_LOG_LEVEL }}" >> collection_summary.txt
+        echo "" >> collection_summary.txt
+        
+        # Statut des fichiers
+        if [ -f "data/latest_data.json" ]; then
+          echo "✅ Données collectées avec succès" >> collection_summary.txt
+          FILE_SIZE=$(stat -f%z data/latest_data.json 2>/dev/null || stat -c%s data/latest_data.json 2>/dev/null || echo "unknown")
+          echo "📏 Taille du fichier: $FILE_SIZE bytes" >> collection_summary.txt
+        else
+          echo "❌ Échec de la collecte de données" >> collection_summary.txt
+        fi
+        
+        # Afficher le résumé
+        echo "📄 Résumé généré:"
+        cat collection_summary.txt | sed 's/^/  /'
+        
     - name: Upload Data Files
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: weather-data-${{ github.run_number }}
-        path: data/
+        name: weather-data-${{ github.run_number }}-${{ github.run_attempt }}
+        path: |
+          data/
+          logs/
+          collection_summary.txt
         retention-days: 7
         if-no-files-found: warn
+        
+    - name: Upload Latest Data Only
+      if: always() && hashFiles('data/latest_data.json') != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: latest-weather-data
+        path: data/latest_data.json
+        retention-days: 30
+        if-no-files-found: ignore
+        
+    - name: Notify Success
+      if: success()
+      run: |
+        echo "🎉 Collecte de données météo réussie!"
+        echo "📊 Les données ont été sauvegardées et sont disponibles via Firebase"
+        echo "📦 Artifacts disponibles pour ${{ env.COLLECTION_LATITUDE }}, ${{ env.COLLECTION_LONGITUDE }}"
+        
+    - name: Notify Failure
+      if: failure()
+      run: |
+        echo "❌ Échec de la collecte de données météo"
+        echo "🔍 Vérifiez les logs pour plus de détails"
+        echo "⚙️ Vérifiez la configuration des secrets GitHub"
+        
+        # Informations de debug
+        echo "🐛 Informations de debug:"
+        echo "  - Python version: $(python --version)"
+        echo "  - Working directory: $(pwd)"
+        echo "  - Environment variables présentes:"
+        env | grep -E "(GCP|OPENWEATHER|FIREBASE|DEFAULT)" | sed 's/=.*/=***/' | sed 's/^/    /'
